@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paper Status Board</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <main class="board">
+        <header class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Research Workspace</p>
+            <h1>Paper Status Board</h1>
+            <p class="hero-text">
+              공저 논문 진행 상황을 한눈에 보고, 각 논문의 현재 상태를 빠르게
+              업데이트할 수 있는 초안 페이지입니다.
+            </p>
+          </div>
+          <aside class="summary-panel" aria-label="Status summary">
+            <p class="summary-label">Current Snapshot</p>
+            <div class="summary-grid" id="summaryGrid"></div>
+          </aside>
+        </header>
+
+        <section class="list-header" aria-label="Paper list header">
+          <div>
+            <p class="section-kicker">Working Papers</p>
+            <h2>논문 리스트</h2>
+          </div>
+        </section>
+
+        <section class="paper-list" id="paperList" aria-live="polite"></section>
+
+        <section class="paper-add-panel" aria-labelledby="addPaperHeading">
+          <div class="add-panel-copy">
+            <p class="section-kicker">New Entry</p>
+            <h2 id="addPaperHeading">논문 추가</h2>
+            <p class="add-panel-text">
+              필요한 정보를 입력한 뒤 <strong>+</strong> 버튼을 누르면 논문
+              리스트에 바로 추가됩니다.
+            </p>
+          </div>
+
+          <form class="add-paper-form" id="addPaperForm">
+            <div class="field-grid">
+              <label class="form-field form-field-compact">
+                <span>Year</span>
+                <input
+                  id="newPaperYear"
+                  name="year"
+                  type="number"
+                  min="1900"
+                  max="2100"
+                  required
+                />
+              </label>
+
+              <label class="form-field form-field-compact">
+                <span>Status</span>
+                <select id="newPaperStatus" name="status"></select>
+              </label>
+
+              <label class="form-field form-field-wide">
+                <span>Title</span>
+                <input
+                  id="newPaperTitle"
+                  name="title"
+                  type="text"
+                  placeholder="논문 제목을 입력하세요"
+                  required
+                />
+              </label>
+
+              <label class="form-field form-field-wide">
+                <span>Authors</span>
+                <input
+                  id="newPaperAuthors"
+                  name="authors"
+                  type="text"
+                  placeholder="공저자 이름을 입력하세요"
+                  required
+                />
+              </label>
+
+              <label class="form-field form-field-wide">
+                <span>Target Journal</span>
+                <input
+                  id="newPaperJournal"
+                  name="targetJournal"
+                  type="text"
+                  placeholder="OOO"
+                />
+              </label>
+
+            </div>
+
+            <div class="form-actions">
+              <p class="form-hint">입력 후 + 버튼을 누르면 즉시 리스트에 반영됩니다.</p>
+              <button class="add-button" type="submit" aria-label="논문 추가">
+                +
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <template id="paperCardTemplate">
+      <article class="paper-card">
+        <div class="paper-card-top">
+          <div class="paper-badges">
+            <span class="year-badge"></span>
+            <label class="journal-field">
+              <span class="journal-label">Target Journal :</span>
+              <input
+                class="journal-input"
+                type="text"
+                placeholder="OOO"
+                aria-label="Target journal"
+              />
+            </label>
+          </div>
+          <label class="status-field">
+            <span class="status-label">STATUS</span>
+            <select class="status-select" aria-label="논문 상태 선택"></select>
+          </label>
+        </div>
+
+        <div class="paper-copy">
+          <h3 class="paper-title"></h3>
+          <p class="paper-authors"></p>
+        </div>
+      </article>
+    </template>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
