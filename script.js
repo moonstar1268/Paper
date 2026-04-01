@@ -1,3 +1,5 @@
+const APP_CONFIG = window.APP_CONFIG || {};
+
 const STATUS_STORAGE_KEY = "paper-status-board-status-v1";
 const CUSTOM_PAPERS_STORAGE_KEY = "paper-status-board-custom-papers-v1";
 const JOURNAL_STORAGE_KEY = "paper-status-board-journal-v1";
@@ -54,112 +56,126 @@ const paperList = document.querySelector("#paperList");
 const summaryGrid = document.querySelector("#summaryGrid");
 const template = document.querySelector("#paperCardTemplate");
 const addPaperForm = document.querySelector("#addPaperForm");
+const modePill = document.querySelector("#modePill");
 const newPaperYearInput = document.querySelector("#newPaperYear");
 const newPaperStatusSelect = document.querySelector("#newPaperStatus");
 const newPaperTitleInput = document.querySelector("#newPaperTitle");
 const newPaperAuthorsInput = document.querySelector("#newPaperAuthors");
 const newPaperJournalInput = document.querySelector("#newPaperJournal");
 
-function loadStoredStatuses() {
+const state = {
+  papers: [],
+  sharedMode: Boolean(
+    window.supabase &&
+      APP_CONFIG.supabaseUrl &&
+      APP_CONFIG.supabaseAnonKey,
+  ),
+  supabase: null,
+  realtimeChannel: null,
+};
+
+function loadStoredObject(key, fallbackValue) {
   try {
-    return JSON.parse(localStorage.getItem(STATUS_STORAGE_KEY) || "{}");
+    return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallbackValue));
   } catch {
-    return {};
+    return fallbackValue;
   }
 }
 
-function saveStatus(id, status) {
-  const stored = loadStoredStatuses();
-  stored[id] = status;
-  localStorage.setItem(STATUS_STORAGE_KEY, JSON.stringify(stored));
+function saveStoredObject(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
 }
 
-function loadCustomPapers() {
-  try {
-    return JSON.parse(localStorage.getItem(CUSTOM_PAPERS_STORAGE_KEY) || "[]");
-  } catch {
-    return [];
-  }
+function buildLocalPapers() {
+  const storedStatuses = loadStoredObject(STATUS_STORAGE_KEY, {});
+  const storedJournals = loadStoredObject(JOURNAL_STORAGE_KEY, {});
+  const storedTitles = loadStoredObject(TITLE_STORAGE_KEY, {});
+  const customPapers = loadStoredObject(CUSTOM_PAPERS_STORAGE_KEY, []);
+
+  return [...defaultPapers, ...customPapers].map((paper) => ({
+    ...paper,
+    status: storedStatuses[paper.id] || paper.status,
+    targetJournal: storedJournals[paper.id] || paper.targetJournal || "OOO",
+    title: storedTitles[paper.id] || paper.title,
+  }));
 }
 
-function loadStoredJournals() {
-  try {
-    return JSON.parse(localStorage.getItem(JOURNAL_STORAGE_KEY) || "{}");
-  } catch {
-    return {};
-  }
+function saveLocalStatus(id, status) {
+  const storedStatuses = loadStoredObject(STATUS_STORAGE_KEY, {});
+  storedStatuses[id] = status;
+  saveStoredObject(STATUS_STORAGE_KEY, storedStatuses);
 }
 
-function loadStoredTitles() {
-  try {
-    return JSON.parse(localStorage.getItem(TITLE_STORAGE_KEY) || "{}");
-  } catch {
-    return {};
-  }
+function saveLocalJournal(id, targetJournal) {
+  const storedJournals = loadStoredObject(JOURNAL_STORAGE_KEY, {});
+  storedJournals[id] = targetJournal;
+  saveStoredObject(JOURNAL_STORAGE_KEY, storedJournals);
 }
 
-function saveCustomPapers(customPapers) {
-  localStorage.setItem(
-    CUSTOM_PAPERS_STORAGE_KEY,
-    JSON.stringify(customPapers),
-  );
+function saveLocalTitle(id, title) {
+  const storedTitles = loadStoredObject(TITLE_STORAGE_KEY, {});
+  storedTitles[id] = title;
+  saveStoredObject(TITLE_STORAGE_KEY, storedTitles);
 }
 
-function saveJournal(id, journal) {
-  const stored = loadStoredJournals();
-  stored[id] = journal;
-  localStorage.setItem(JOURNAL_STORAGE_KEY, JSON.stringify(stored));
+function saveLocalCustomPaper(paper) {
+  const customPapers = loadStoredObject(CUSTOM_PAPERS_STORAGE_KEY, []);
+  customPapers.push(paper);
+  saveStoredObject(CUSTOM_PAPERS_STORAGE_KEY, customPapers);
 }
 
-function saveTitle(id, title) {
-  const stored = loadStoredTitles();
-  stored[id] = title;
-  localStorage.setItem(TITLE_STORAGE_KEY, JSON.stringify(stored));
+function normalizeSharedPaper(row) {
+  return {
+    id: row.id,
+    year: row.year,
+    title: row.title,
+    authors: row.authors,
+    targetJournal: row.target_journal || "OOO",
+    status: row.status,
+    sortOrder: row.sort_order || 0,
+    createdAt: row.created_at,
+  };
 }
 
-function getAllPapers() {
-  return [...defaultPapers, ...loadCustomPapers()];
-}
-
-function getPaperStatus(paper) {
-  const stored = loadStoredStatuses();
-  return stored[paper.id] || paper.status;
-}
-
-function getPaperJournal(paper) {
-  const stored = loadStoredJournals();
-  return stored[paper.id] || paper.targetJournal || "OOO";
-}
-
-function getPaperTitle(paper) {
-  const stored = loadStoredTitles();
-  return stored[paper.id] || paper.title;
+function updateModePill(message) {
+  modePill.textContent = message;
 }
 
 function populateStatusSelect(select, selectedValue) {
   select.innerHTML = "";
 
   for (const option of statusOptions) {
-    const element = document.createElement("option");
-    element.value = option.value;
-    element.textContent = option.label;
-    element.selected = option.value === selectedValue;
-    select.append(element);
+    const optionElement = document.createElement("option");
+    optionElement.value = option.value;
+    optionElement.textContent = option.label;
+    optionElement.selected = option.value === selectedValue;
+    select.append(optionElement);
   }
 }
 
+function setInitialFormValues() {
+  newPaperYearInput.value = String(new Date().getFullYear());
+  newPaperJournalInput.value = "OOO";
+  populateStatusSelect(newPaperStatusSelect, "working");
+}
+
+function updatePaperInState(paperId, patch) {
+  state.papers = state.papers.map((paper) =>
+    paper.id === paperId ? { ...paper, ...patch } : paper,
+  );
+}
+
 function updateSummary() {
-  const papers = getAllPapers();
   const counts = {
-    total: papers.length,
+    total: state.papers.length,
     working: 0,
     "with-editor": 0,
     "under-review": 0,
     "under-rr": 0,
   };
 
-  for (const paper of papers) {
-    counts[getPaperStatus(paper)] += 1;
+  for (const paper of state.papers) {
+    counts[paper.status] += 1;
   }
 
   const items = [
@@ -181,10 +197,9 @@ function updateSummary() {
 }
 
 function renderPapers() {
-  const papers = getAllPapers();
   paperList.innerHTML = "";
 
-  for (const paper of papers) {
+  for (const paper of state.papers) {
     const fragment = template.content.cloneNode(true);
     const card = fragment.querySelector(".paper-card");
     const yearBadge = fragment.querySelector(".year-badge");
@@ -193,39 +208,47 @@ function renderPapers() {
     const editTitleButton = fragment.querySelector(".edit-title-button");
     const authors = fragment.querySelector(".paper-authors");
     const statusField = fragment.querySelector(".status-field");
-    const selectedStatus = getPaperStatus(paper);
-    const selectedJournal = getPaperJournal(paper);
-    const selectedTitle = getPaperTitle(paper);
     const select = document.createElement("select");
 
     select.className = "status-select";
     select.setAttribute("aria-label", "논문 상태 선택");
-    populateStatusSelect(select, selectedStatus);
+    populateStatusSelect(select, paper.status);
 
-    card.dataset.status = selectedStatus;
+    card.dataset.status = paper.status;
     yearBadge.textContent = paper.year;
-    journalInput.value = selectedJournal;
-    title.textContent = selectedTitle;
+    journalInput.value = paper.targetJournal || "OOO";
+    title.textContent = paper.title;
     authors.innerHTML = `<strong>Authors:</strong> ${paper.authors}`;
 
-    select.addEventListener("change", (event) => {
+    select.addEventListener("change", async (event) => {
       const nextStatus = event.target.value;
       card.dataset.status = nextStatus;
-      saveStatus(paper.id, nextStatus);
+      updatePaperInState(paper.id, { status: nextStatus });
       updateSummary();
+
+      const success = await persistPaperUpdate(paper.id, { status: nextStatus });
+
+      if (!success) {
+        await reloadFromSource();
+      }
     });
 
-    journalInput.addEventListener("blur", (event) => {
+    journalInput.addEventListener("blur", async (event) => {
       const normalizedJournal = event.target.value.trim() || "OOO";
       event.target.value = normalizedJournal;
-      saveJournal(paper.id, normalizedJournal);
+      updatePaperInState(paper.id, { targetJournal: normalizedJournal });
+
+      const success = await persistPaperUpdate(paper.id, {
+        targetJournal: normalizedJournal,
+      });
+
+      if (!success) {
+        await reloadFromSource();
+      }
     });
 
-    editTitleButton.addEventListener("click", () => {
-      const nextTitle = window.prompt(
-        "새 논문 제목을 입력하세요.",
-        getPaperTitle(paper),
-      );
+    editTitleButton.addEventListener("click", async () => {
+      const nextTitle = window.prompt("새 논문 제목을 입력하세요.", paper.title);
 
       if (nextTitle === null) {
         return;
@@ -238,7 +261,15 @@ function renderPapers() {
       }
 
       title.textContent = normalizedTitle;
-      saveTitle(paper.id, normalizedTitle);
+      updatePaperInState(paper.id, { title: normalizedTitle });
+
+      const success = await persistPaperUpdate(paper.id, {
+        title: normalizedTitle,
+      });
+
+      if (!success) {
+        await reloadFromSource();
+      }
     });
 
     statusField.replaceChild(select, statusField.querySelector(".status-select"));
@@ -246,7 +277,96 @@ function renderPapers() {
   }
 }
 
-function createPaperId(title) {
+async function loadSharedPapers() {
+  const { data, error } = await state.supabase
+    .from("papers")
+    .select("id, year, title, authors, target_journal, status, sort_order, created_at")
+    .order("year", { ascending: false })
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error(error);
+    throw error;
+  }
+
+  state.papers = data.map(normalizeSharedPaper);
+}
+
+function subscribeToRealtimeUpdates() {
+  if (state.realtimeChannel) {
+    return;
+  }
+
+  state.realtimeChannel = state.supabase
+    .channel("papers-live-sync")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "papers" },
+      async () => {
+        await reloadFromSource();
+      },
+    )
+    .subscribe();
+}
+
+async function reloadFromSource() {
+  if (state.sharedMode) {
+    await loadSharedPapers();
+  } else {
+    state.papers = buildLocalPapers();
+  }
+
+  renderPapers();
+  updateSummary();
+}
+
+async function persistPaperUpdate(paperId, patch) {
+  if (state.sharedMode) {
+    const sharedPatch = {};
+
+    if (patch.status) {
+      sharedPatch.status = patch.status;
+    }
+
+    if (patch.targetJournal) {
+      sharedPatch.target_journal = patch.targetJournal;
+    }
+
+    if (patch.title) {
+      sharedPatch.title = patch.title;
+    }
+
+    const { error } = await state.supabase
+      .from("papers")
+      .update(sharedPatch)
+      .eq("id", paperId);
+
+    if (error) {
+      console.error(error);
+      window.alert("Supabase 저장에 실패했습니다. 설정 또는 권한을 확인해주세요.");
+      return false;
+    }
+
+    return true;
+  }
+
+  if (patch.status) {
+    saveLocalStatus(paperId, patch.status);
+  }
+
+  if (patch.targetJournal) {
+    saveLocalJournal(paperId, patch.targetJournal);
+  }
+
+  if (patch.title) {
+    saveLocalTitle(paperId, patch.title);
+  }
+
+  return true;
+}
+
+function createLocalPaperId(title) {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9가-힣]+/g, "-")
@@ -256,12 +376,19 @@ function createPaperId(title) {
   return `${slug || "paper"}-${Date.now().toString(36)}`;
 }
 
-function setInitialFormValues() {
-  newPaperYearInput.value = String(new Date().getFullYear());
-  populateStatusSelect(newPaperStatusSelect, "working");
+function getNextSortOrder() {
+  if (!state.papers.length) {
+    return 1;
+  }
+
+  return (
+    Math.max(
+      ...state.papers.map((paper) => Number(paper.sortOrder || 0)),
+    ) + 1
+  );
 }
 
-addPaperForm.addEventListener("submit", (event) => {
+addPaperForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const title = newPaperTitleInput.value.trim();
@@ -274,30 +401,76 @@ addPaperForm.addEventListener("submit", (event) => {
     return;
   }
 
-  const newPaper = {
-    id: createPaperId(title),
-    year,
-    title,
-    authors,
-    targetJournal,
-    status,
-  };
+  if (state.sharedMode) {
+    const { error } = await state.supabase.from("papers").insert({
+      year,
+      title,
+      authors,
+      target_journal: targetJournal,
+      status,
+      sort_order: getNextSortOrder(),
+    });
 
-  const customPapers = loadCustomPapers();
-  customPapers.push(newPaper);
-  saveCustomPapers(customPapers);
-  saveStatus(newPaper.id, status);
-  saveJournal(newPaper.id, targetJournal);
-  saveTitle(newPaper.id, title);
+    if (error) {
+      console.error(error);
+      window.alert("새 논문 저장에 실패했습니다. Supabase 설정을 확인해주세요.");
+      return;
+    }
+  } else {
+    const newPaper = {
+      id: createLocalPaperId(title),
+      year,
+      title,
+      authors,
+      targetJournal,
+      status,
+    };
 
-  renderPapers();
-  updateSummary();
+    saveLocalCustomPaper(newPaper);
+    saveLocalStatus(newPaper.id, status);
+    saveLocalJournal(newPaper.id, targetJournal);
+    saveLocalTitle(newPaper.id, title);
+  }
 
   addPaperForm.reset();
   setInitialFormValues();
-  paperList.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
+  await reloadFromSource();
+  paperList.lastElementChild?.scrollIntoView({
+    behavior: "smooth",
+    block: "center",
+  });
 });
 
-setInitialFormValues();
-renderPapers();
-updateSummary();
+async function initializeApp() {
+  setInitialFormValues();
+
+  if (state.sharedMode) {
+    state.supabase = window.supabase.createClient(
+      APP_CONFIG.supabaseUrl,
+      APP_CONFIG.supabaseAnonKey,
+    );
+
+    try {
+      await loadSharedPapers();
+      subscribeToRealtimeUpdates();
+      updateModePill("Shared mode: Supabase realtime sync is active.");
+    } catch {
+      state.sharedMode = false;
+      state.supabase = null;
+      state.papers = buildLocalPapers();
+      updateModePill(
+        "Local mode: Supabase connection failed, so this browser is saving locally.",
+      );
+    }
+  } else {
+    state.papers = buildLocalPapers();
+    updateModePill(
+      "Local mode: changes stay in this browser until Supabase is configured.",
+    );
+  }
+
+  renderPapers();
+  updateSummary();
+}
+
+initializeApp();
