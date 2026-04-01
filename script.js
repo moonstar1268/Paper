@@ -1,6 +1,7 @@
 const STATUS_STORAGE_KEY = "paper-status-board-status-v1";
 const CUSTOM_PAPERS_STORAGE_KEY = "paper-status-board-custom-papers-v1";
 const JOURNAL_STORAGE_KEY = "paper-status-board-journal-v1";
+const TITLE_STORAGE_KEY = "paper-status-board-title-v1";
 
 const statusOptions = [
   { value: "working", label: "WORKING" },
@@ -89,6 +90,14 @@ function loadStoredJournals() {
   }
 }
 
+function loadStoredTitles() {
+  try {
+    return JSON.parse(localStorage.getItem(TITLE_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
 function saveCustomPapers(customPapers) {
   localStorage.setItem(
     CUSTOM_PAPERS_STORAGE_KEY,
@@ -100,6 +109,12 @@ function saveJournal(id, journal) {
   const stored = loadStoredJournals();
   stored[id] = journal;
   localStorage.setItem(JOURNAL_STORAGE_KEY, JSON.stringify(stored));
+}
+
+function saveTitle(id, title) {
+  const stored = loadStoredTitles();
+  stored[id] = title;
+  localStorage.setItem(TITLE_STORAGE_KEY, JSON.stringify(stored));
 }
 
 function getAllPapers() {
@@ -114,6 +129,11 @@ function getPaperStatus(paper) {
 function getPaperJournal(paper) {
   const stored = loadStoredJournals();
   return stored[paper.id] || paper.targetJournal || "OOO";
+}
+
+function getPaperTitle(paper) {
+  const stored = loadStoredTitles();
+  return stored[paper.id] || paper.title;
 }
 
 function populateStatusSelect(select, selectedValue) {
@@ -170,10 +190,12 @@ function renderPapers() {
     const yearBadge = fragment.querySelector(".year-badge");
     const journalInput = fragment.querySelector(".journal-input");
     const title = fragment.querySelector(".paper-title");
+    const editTitleButton = fragment.querySelector(".edit-title-button");
     const authors = fragment.querySelector(".paper-authors");
     const statusField = fragment.querySelector(".status-field");
     const selectedStatus = getPaperStatus(paper);
     const selectedJournal = getPaperJournal(paper);
+    const selectedTitle = getPaperTitle(paper);
     const select = document.createElement("select");
 
     select.className = "status-select";
@@ -183,7 +205,7 @@ function renderPapers() {
     card.dataset.status = selectedStatus;
     yearBadge.textContent = paper.year;
     journalInput.value = selectedJournal;
-    title.textContent = paper.title;
+    title.textContent = selectedTitle;
     authors.innerHTML = `<strong>Authors:</strong> ${paper.authors}`;
 
     select.addEventListener("change", (event) => {
@@ -197,6 +219,26 @@ function renderPapers() {
       const normalizedJournal = event.target.value.trim() || "OOO";
       event.target.value = normalizedJournal;
       saveJournal(paper.id, normalizedJournal);
+    });
+
+    editTitleButton.addEventListener("click", () => {
+      const nextTitle = window.prompt(
+        "새 논문 제목을 입력하세요.",
+        getPaperTitle(paper),
+      );
+
+      if (nextTitle === null) {
+        return;
+      }
+
+      const normalizedTitle = nextTitle.trim();
+
+      if (!normalizedTitle) {
+        return;
+      }
+
+      title.textContent = normalizedTitle;
+      saveTitle(paper.id, normalizedTitle);
     });
 
     statusField.replaceChild(select, statusField.querySelector(".status-select"));
@@ -246,6 +288,7 @@ addPaperForm.addEventListener("submit", (event) => {
   saveCustomPapers(customPapers);
   saveStatus(newPaper.id, status);
   saveJournal(newPaper.id, targetJournal);
+  saveTitle(newPaper.id, title);
 
   renderPapers();
   updateSummary();
