@@ -4,6 +4,7 @@ const STATUS_STORAGE_KEY = "paper-status-board-status-v1";
 const CUSTOM_PAPERS_STORAGE_KEY = "paper-status-board-custom-papers-v1";
 const JOURNAL_STORAGE_KEY = "paper-status-board-journal-v1";
 const TITLE_STORAGE_KEY = "paper-status-board-title-v1";
+const DELETED_STORAGE_KEY = "paper-status-board-deleted-v1";
 
 const statusOptions = [
   { value: "working", label: "WORKING" },
@@ -91,13 +92,16 @@ function buildLocalPapers() {
   const storedJournals = loadStoredObject(JOURNAL_STORAGE_KEY, {});
   const storedTitles = loadStoredObject(TITLE_STORAGE_KEY, {});
   const customPapers = loadStoredObject(CUSTOM_PAPERS_STORAGE_KEY, []);
+  const deletedPaperIds = loadStoredObject(DELETED_STORAGE_KEY, {});
 
-  return [...defaultPapers, ...customPapers].map((paper) => ({
-    ...paper,
-    status: storedStatuses[paper.id] || paper.status,
-    targetJournal: storedJournals[paper.id] || paper.targetJournal || "OOO",
-    title: storedTitles[paper.id] || paper.title,
-  }));
+  return [...defaultPapers, ...customPapers]
+    .filter((paper) => !deletedPaperIds[paper.id])
+    .map((paper) => ({
+      ...paper,
+      status: storedStatuses[paper.id] || paper.status,
+      targetJournal: storedJournals[paper.id] || paper.targetJournal || "OOO",
+      title: storedTitles[paper.id] || paper.title,
+    }));
 }
 
 function saveLocalStatus(id, status) {
@@ -122,6 +126,27 @@ function saveLocalCustomPaper(paper) {
   const customPapers = loadStoredObject(CUSTOM_PAPERS_STORAGE_KEY, []);
   customPapers.push(paper);
   saveStoredObject(CUSTOM_PAPERS_STORAGE_KEY, customPapers);
+}
+
+function removeFromStoredMap(key, paperId) {
+  const storedMap = loadStoredObject(key, {});
+  delete storedMap[paperId];
+  saveStoredObject(key, storedMap);
+}
+
+function deleteLocalPaper(paperId) {
+  const deletedPaperIds = loadStoredObject(DELETED_STORAGE_KEY, {});
+  deletedPaperIds[paperId] = true;
+  saveStoredObject(DELETED_STORAGE_KEY, deletedPaperIds);
+
+  const customPapers = loadStoredObject(CUSTOM_PAPERS_STORAGE_KEY, []).filter(
+    (paper) => paper.id !== paperId,
+  );
+  saveStoredObject(CUSTOM_PAPERS_STORAGE_KEY, customPapers);
+
+  removeFromStoredMap(STATUS_STORAGE_KEY, paperId);
+  removeFromStoredMap(JOURNAL_STORAGE_KEY, paperId);
+  removeFromStoredMap(TITLE_STORAGE_KEY, paperId);
 }
 
 function normalizeSharedPaper(row) {
@@ -206,6 +231,7 @@ function renderPapers() {
     const journalInput = fragment.querySelector(".journal-input");
     const title = fragment.querySelector(".paper-title");
     const editTitleButton = fragment.querySelector(".edit-title-button");
+    const deletePaperButton = fragment.querySelector(".delete-paper-button");
     const authors = fragment.querySelector(".paper-authors");
     const statusField = fragment.querySelector(".status-field");
     const select = document.createElement("select");
@@ -270,6 +296,24 @@ function renderPapers() {
       if (!success) {
         await reloadFromSource();
       }
+    });
+
+    deletePaperButton.addEventListener("click", async () => {
+      const confirmed = window.confirm(
+        `"${paper.title}" 논문을 삭제하시겠습니까?`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      const success = await deletePaper(paper.id);
+
+      if (!success) {
+        return;
+      }
+
+      await reloadFromSource();
     });
 
     statusField.replaceChild(select, statusField.querySelector(".status-select"));
@@ -363,6 +407,28 @@ async function persistPaperUpdate(paperId, patch) {
     saveLocalTitle(paperId, patch.title);
   }
 
+  return true;
+}
+
+async function deletePaper(paperId) {
+  if (state.sharedMode) {
+    const { error } = await state.supabase
+      .from("papers")
+      .delete()
+      .eq("id", paperId);
+
+    if (error) {
+      console.error(error);
+      window.alert(
+        "논문 삭제에 실패했습니다. Supabase delete 정책을 다시 적용해주세요.",
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  deleteLocalPaper(paperId);
   return true;
 }
 

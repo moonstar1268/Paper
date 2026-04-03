@@ -35,6 +35,7 @@ alter table public.papers enable row level security;
 drop policy if exists "papers_select_public" on public.papers;
 drop policy if exists "papers_insert_public" on public.papers;
 drop policy if exists "papers_update_public" on public.papers;
+drop policy if exists "papers_delete_public" on public.papers;
 
 create policy "papers_select_public"
 on public.papers
@@ -54,6 +55,12 @@ for update
 to anon, authenticated
 using (true)
 with check (true);
+
+create policy "papers_delete_public"
+on public.papers
+for delete
+to anon, authenticated
+using (true);
 
 do $$
 begin
